@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spirit World Hunter - Anmol & Anshul Raj</title>
+    <style>
+        :root { --p: #6200ea; --s: #03dac6; --bg: #0a0a0a; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; font-family: 'Courier New', Courier, monospace; overflow: hidden; touch-action: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        canvas { background: #111; box-shadow: 0 0 20px rgba(0,0,0,0.5); image-rendering: pixelated; max-width: 100%; max-height: 100%; }
+        
+        /* UI Overlays */
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.85); z-index: 10; text-align: center; padding: 20px; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        button { background: var(--p); color: white; border: none; padding: 12px 24px; margin: 10px; cursor: pointer; font-size: 18px; border-radius: 5px; font-weight: bold; }
+        button:active { transform: scale(0.95); }
+        input { padding: 10px; font-size: 18px; width: 250px; margin-bottom: 20px; border-radius: 5px; border: none; }
+        
+        #hud { position: absolute; top: 10px; left: 10px; z-index: 5; pointer-events: none; width: calc(100% - 20px); }
+        .stats-bar { display: flex; justify-content: space-between; font-size: 14px; text-shadow: 2px 2px black; }
+        #health-container { width: 150px; height: 15px; background: #444; border: 2px solid #fff; }
+        #health-fill { width: 100%; height: 100%; background: #ff3d00; transition: width 0.3s; }
+        #xp-bar { width: 100%; height: 5px; background: #222; margin-top: 5px; }
+        #xp-fill { width: 0%; height: 100%; background: var(--s); }
+
+        /* Mobile Controls */
+        #controls { position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: flex-end; z-index: 5; }
+        #joystick-area { width: 120px; height: 120px; background: rgba(255,255,255,0.1); border-radius: 50%; position: relative; }
+        #joystick-knob { width: 50px; height: 50px; background: rgba(255,255,255,0.3); border-radius: 50%; position: absolute; top: 35px; left: 35px; }
+        #action-buttons { display: flex; flex-direction: column; gap: 10px; }
+        .btn-round { width: 70px; height: 70px; background: rgba(100,0,255,0.5); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; border: 2px solid white; -webkit-tap-highlight-color: transparent; }
+
+        .dialog-box { background: rgba(255,255,255,0.9); color: #000; padding: 15px; border-radius: 10px; border: 4px solid var(--p); max-width: 400px; margin-bottom: 20px; }
+        .flash { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: red; opacity: 0; pointer-events: none; z-index: 20; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="flash" class="flash"></div>
+
+    <!-- Preloader -->
+    <div id="preloader" class="overlay">
+        <h1>SPIRIT WORLD HUNTER</h1>
+        <p>Loading Assets...</p>
+        <button onclick="initGame()">TAP TO START</button>
+    </div>
+
+    <!-- Intro / Name Input -->
+    <div id="intro-screen" class="overlay hidden">
+        <div class="dialog-box">
+            <h2 id="guide-text">Namaste dost! Main hoon Spirit Guide.</h2>
+            <p>Spirit world mein welcome! Apna naam batao.</p>
+        </div>
+        <input type="text" id="player-name" placeholder="Enter your name..." maxlength="12">
+        <button onclick="savePlayerName()">Enter the Spirit World</button>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="overlay hidden">
+        <h1>Spirit World Hunter</h1>
+        <p id="player-welcome"></p>
+        <div id="global-stats" style="font-size: 12px; margin-bottom: 10px; color: var(--s);"></div>
+        <button onclick="startGame()">START HUNT</button>
+        <button onclick="openCharacterSelect()">CHARACTER SELECT</button>
+        <button onclick="openStats()">MY STATS</button>
+    </div>
+
+    <!-- Character Select -->
+    <div id="char-select" class="overlay hidden">
+        <h2>Select Hunter</h2>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+            <div onclick="selectChar(0)" id="c0" style="border: 2px solid gold; padding: 10px;">Male (Free)</div>
+            <div onclick="selectChar(1)" id="c1" style="opacity: 0.5; padding: 10px;">Female (Lvl 5)</div>
+            <div onclick="selectChar(2)" id="c2" style="opacity: 0.5; padding: 10px;">Elder (Lvl 10)</div>
+            <div onclick="selectChar(3)" id="c3" style="opacity: 0.5; padding: 10px;">Teen (Lvl 15)</div>
+        </div>
+        <button onclick="showMenu('main-menu')">BACK</button>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+        <div class="stats-bar">
+            <div>
+                <div id="health-container"><div id="health-fill"></div></div>
+                <div id="xp-bar"><div id="xp-fill"></div></div>
+                <span id="player-tag">Anmol</span> | Lvl <span id="lvl-num">1</span>
+            </div>
+            <div style="text-align: right;">
+                💰 <span id="coin-count">0</span> | ⭐ <span id="star-count">0</span><br>
+                <small id="hindi-msg">Bhoot pakdo bhai!</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="controls" class="hidden">
+        <div id="joystick-area">
+            <div id="joystick-knob"></div>
+        </div>
+        <div id="action-buttons">
+            <div class="btn-round" id="btn-skill" style="background: #e91e63;">SKILL</div>
+            <div class="btn-round" id="btn-fire" style="width: 90px; height: 90px; background: #2196f3;">TRAP</div>
+        </div>
+    </div>
+</div>
+
+<script>
+/** 
+ * SPIRIT WORLD HUNTER 
+ * Developed by Anmol & Anshul Raj
+ */
+
+// --- CONFIG & STATE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 600;
+canvas.width = W; canvas.height = H;
+
+let state = {
+    user: { name: "Hunter", coins: 0, stars: 0, xp: 0, level: 1, unlockedChars: [0], currentChar: 0, weapons: [0], skills: [0], highLevel: 1 },
+    game: { running: false, level: 1, ghostsCaught: 0, health: 100, score: 0, progress: 0 },
+    input: { x: 0, y: 0, fire: false, skill: false },
+    particles: [],
+    ghosts: [],
+    projectiles: [],
+    vibrate: ('vibrate' in navigator)
+};
+
+// --- SOUND ENGINE (Web Audio API) ---
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+
+function playSound(freq, type, duration, vol = 0.1) {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+const SFX = {
+    shoot: () => playSound(400, 'square', 0.1),
+    catch: () => { playSound(600, 'sine', 0.2); playSound(800, 'sine', 0.3); },
+    hurt: () => { playSound(100, 'sawtooth', 0.3); if(state.vibrate) navigator.vibrate(100); },
+    unlock: () => playSound(1000, 'triangle', 0.5),
+    cheer: () => { playSound(500, 'sine', 0.1); playSound(700, 'sine', 0.1); playSound(900, 'sine', 0.2); }
+};
+
+// --- DATA PERSISTENCE ---
+function saveGame() {
+    localStorage.setItem('SWH_Data', JSON.stringify(state.user));
+}
+
+function loadGame() {
+    const data = localStorage.getItem('SWH_Data');
+    if (data) state.user = JSON.parse(data);
+}
+
+async function syncData() {
+    try {
+        const resp = await fetch('https://jsonplaceholder.typicode.com/users/1');
+        const json = await resp.json();
+        // Mock global stats
+        document.getElementById('global-stats').innerHTML = `Total Players: 1247 | Your Rank: #${Math.floor(Math.random()*100) + 1} | Global Ghosts: 14,567`;
+    } catch(e) { console.log("Offline mode"); }
+}
+
+// --- GAME OBJECTS ---
+class Player {
+    constructor() {
+        this.x = W/2; this.y = H/2;
+        this.w = 40; this.h = 50;
+        this.speed = 4;
+        this.frame = 0;
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // Draw simple pixel art character based on selection
+        const colors = ['#4fc3f7', '#f06292', '#ffb74d', '#9575cd'];
+        ctx.fillStyle = colors[state.user.currentChar];
+        ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h); // Body
+        ctx.fillStyle = "#ffe0b2"; 
+        ctx.fillRect(-this.w/4, -this.h/1.2, this.w/2, this.h/2); // Head
+        ctx.fillStyle = "#000";
+        ctx.fillRect(-this.w/6, -this.h/1.4, 4, 4); // Eyes
+        ctx.fillRect(this.w/12, -this.h/1.4, 4, 4);
+        
+        // Bobbing animation
+        this.frame += 0.1;
+        let bob = Math.sin(this.frame) * 2;
+        
+        // Hand/Weapon
+        ctx.fillStyle = "#555";
+        ctx.fillRect(this.w/2, bob, 15, 8);
+        ctx.restore();
+    }
+    update() {
+        this.x += state.input.x * this.speed;
+        this.y += state.input.y * this.speed;
+        this.x = Math.max(20, Math.min(W-20, this.x));
+        this.y = Math.max(20, Math.min(H-20, this.y));
+    }
+}
+
+class Ghost {
+    constructor(lvl) {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+        this.hp = 1 + (lvl * 0.5);
+        this.speed = 1 + Math.random() * 2;
+        this.w = 30; this.h = 30;
+        this.type = Math.floor(Math.random() * 3);
+        this.angle = 0;
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = "white";
+        ctx.beginPath();
+        ctx.arc(0, 0, 15, Math.PI, 0);
+        ctx.lineTo(15, 20);
+        ctx.lineTo(10, 15);
+        ctx.lineTo(0, 20);
+        ctx.lineTo(-10, 15);
+        ctx.lineTo(-15, 20);
+        ctx.fill();
+        ctx.fillStyle = "black";
+        ctx.fillRect(-8, -5, 4, 4);
+        ctx.fillRect(4, -5, 4, 4);
+        ctx.restore();
+    }
+    update(player) {
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        this.x += (dx/dist) * this.speed;
+        this.y += (dy/dist) * this.speed;
+        
+        // Ghost attack
+        if(dist < 30 && frameCount % 60 === 0) {
+            takeDamage(10);
+        }
+    }
+}
+
+class Projectile {
+    constructor(x, y, tx, ty) {
+        this.x = x; this.y = y;
+        let dx = tx - x; let dy = ty - y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        this.vx = (dx/dist) * 8;
+        this.vy = (dy/dist) * 8;
+        this.life = 100;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        this.life--;
+    }
+    draw() {
+        ctx.fillStyle = state.user.weapons[0] === 0 ? "#00f" : "#0ff";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 5, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+// --- ENGINE CORE ---
+let player = new Player();
+let frameCount = 0;
+
+function initGame() {
+    if(!audioCtx) audioCtx = new AudioCtx();
+    loadGame();
+    document.getElementById('preloader').classList.add('hidden');
+    document.getElementById('intro-screen').classList.remove('hidden');
+    syncData();
+}
+
+function savePlayerName() {
+    const name = document.getElementById('player-name').value;
+    if(name) state.user.name = name;
+    document.getElementById('player-tag').innerText = state.user.name;
+    document.getElementById('player-welcome').innerText = `Ready to hunt, ${state.user.name}?`;
+    showMenu('main-menu');
+    saveGame();
+}
+
+function showMenu(id) {
+    document.querySelectorAll('.overlay').forEach(el => el.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+}
+
+function startGame() {
+    showMenu('none');
+    document.getElementById('hud').classList.remove('hidden');
+    document.getElementById('controls').classList.remove('hidden');
+    state.game.running = true;
+    state.game.health = 100;
+    state.game.ghostsCaught = 0;
+    state.ghosts = [];
+    state.projectiles = [];
+    loop();
+}
+
+function takeDamage(amt) {
+    state.game.health -= amt;
+    SFX.hurt();
+    const flash = document.getElementById('flash');
+    flash.style.opacity = 1;
+    setTimeout(() => flash.style.opacity = 0, 100);
+    
+    if(state.game.health <= 0) {
+        alert("Game Over! Phir se koshish karo bhai.");
+        location.reload();
+    }
+}
+
+function spawnGhost() {
+    if(state.ghosts.length < 5 + state.game.level) {
+        state.ghosts.push(new Ghost(state.game.level));
+    }
+}
+
+function createParticles(x, y, color) {
+    for(let i=0; i<8; i++) {
+        state.particles.push({
+            x, y, 
+            vx: (Math.random()-0.5)*10, 
+            vy: (Math.random()-0.5)*10, 
+            life: 20, 
+            color
+        });
+    }
+}
+
+function drawBackground() {
+    // Procedural Tilemap based on Level
+    const theme = state.game.level % 4;
+    const colors = ['#1a1a1a', '#101d10', '#1d1010', '#10101d']; // House, Forest, Graveyard, Mansion
+    ctx.fillStyle = colors[theme];
+    ctx.fillRect(0,0,W,H);
+    
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    for(let i=0; i<W; i+=40) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke();
+    }
+    for(let i=0; i<H; i+=40) {
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(W, i); ctx.stroke();
+    }
+}
+
+function loop() {
+    if(!state.game.running) return;
+    
+    ctx.clearRect(0,0,W,H);
+    drawBackground();
+    
+    player.update();
+    player.draw();
+    
+    // Ghost Logic
+    if(frameCount % 100 === 0) spawnGhost();
+    
+    state.ghosts.forEach((g, gi) => {
+        g.update(player);
+        g.draw();
+        
+        // Collision with projectiles
+        state.projectiles.forEach((p, pi) => {
+            let dx = g.x - p.x;
+            let dy = g.y - p.y;
+            if(Math.sqrt(dx*dx + dy*dy) < 20) {
+                g.hp--;
+                state.projectiles.splice(pi, 1);
+                if(g.hp <= 0) {
+                    SFX.catch();
+                    createParticles(g.x, g.y, "white");
+                    state.ghosts.splice(gi, 1);
+                    state.game.ghostsCaught++;
+                    state.user.coins += 10;
+                    state.user.xp += 20;
+                    checkLevelProgress();
+                }
+            }
+        });
+    });
+    
+    // Projectiles
+    state.projectiles.forEach((p, i) => {
+        p.update();
+        p.draw();
+        if(p.life <= 0) state.projectiles.splice(i, 1);
+    });
+
+    // Particles
+    state.particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.life--;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+        if(p.life <= 0) state.particles.splice(i, 1);
+    });
+    
+    // Update HUD
+    document.getElementById('health-fill').style.width = state.game.health + '%';
+    document.getElementById('coin-count').innerText = state.user.coins;
+    document.getElementById('lvl-num').innerText = state.game.level;
+    
+    frameCount++;
+    requestAnimationFrame(loop);
+}
+
+function checkLevelProgress() {
+    const required = 5 + (state.game.level * 2);
+    if(state.game.ghostsCaught >= required) {
+        state.game.level++;
+        SFX.cheer();
+        alert(`Level ${state.game.level-1} Complete! "Shabaash!"`);
+        if(state.game.level > 20) {
+            state.game.running = false;
+            alert("VICTORY! All 20 Levels Cleared. Made by Toppo AT.");
+            location.reload();
+        }
+        state.game.ghostsCaught = 0;
+        saveGame();
+    }
+}
+
+// --- INPUTS ---
+// Mouse/Touch Fire
+canvas.addEventListener('mousedown', (e) => {
+    if(!state.game.running) return;
+    const rect = canvas.getBoundingClientRect();
+    const tx = (e.clientX - rect.left) * (W / rect.width);
+    const ty = (e.clientY - rect.top) * (H / rect.height);
+    state.projectiles.push(new Projectile(player.x, player.y, tx, ty));
+    SFX.shoot();
+});
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+    if(e.key === 'w' || e.key === 'ArrowUp') state.input.y = -1;
+    if(e.key === 's' || e.key === 'ArrowDown') state.input.y = 1;
+    if(e.key === 'a' || e.key === 'ArrowLeft') state.input.x = -1;
+    if(e.key === 'd' || e.key === 'ArrowRight') state.input.x = 1;
+});
+window.addEventListener('keyup', (e) => {
+    if(['w','s','ArrowUp','ArrowDown'].includes(e.key)) state.input.y = 0;
+    if(['a','d','ArrowLeft','ArrowRight'].includes(e.key)) state.input.x = 0;
+});
+
+// Virtual Joystick (Mobile)
+const knob = document.getElementById('joystick-knob');
+const area = document.getElementById('joystick-area');
+area.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = area.getBoundingClientRect();
+    const centerX = rect.left + rect.width/2;
+    const centerY = rect.top + rect.height/2;
+    let dx = touch.clientX - centerX;
+    let dy = touch.clientY - centerY;
+    const dist = Math.min(40, Math.sqrt(dx*dx + dy*dy));
+    const angle = Math.atan2(dy, dx);
+    
+    knob.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+    state.input.x = Math.cos(angle) * (dist/40);
+    state.input.y = Math.sin(angle) * (dist/40);
+});
+area.addEventListener('touchend', () => {
+    knob.style.transform = `translate(0,0)`;
+    state.input.x = 0; state.input.y = 0;
+});
+
+document.getElementById('btn-fire').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    // Fire forward based on last movement or right
+    let tx = player.x + (state.input.x || 1) * 100;
+    let ty = player.y + (state.input.y || 0) * 100;
+    state.projectiles.push(new Projectile(player.x, player.y, tx, ty));
+    SFX.shoot();
+});
+
+function selectChar(idx) {
+    const unlocks = [0, 5, 10, 15]; // Level requirements
+    if(state.game.level >= unlocks[idx]) {
+        state.user.currentChar = idx;
+        SFX.unlock();
+        alert("Character Selected!");
+        showMenu('main-menu');
+    } else {
+        alert(`Bhai, Level ${unlocks[idx]} tak pahuncho pehle!`);
+    }
+}
+
+function openCharacterSelect() {
+    showMenu('char-select');
+    for(let i=0; i<4; i++) {
+        const el = document.getElementById('c'+i);
+        const unlocks = [0, 5, 10, 15];
+        if(state.game.level >= unlocks[i]) el.style.opacity = 1;
+    }
+}
+
+function openStats() {
+    alert(`Stats for ${state.user.name}:\nXP: ${state.user.xp}\nCoins: ${state.user.coins}\nLevels Cleared: ${state.game.level-1}`);
+}
+
+// Hindi Dialogue logic
+setInterval(() => {
+    if(!state.game.running) return;
+    const phrases = ["Bhoot pakdo bhai!", "Savdhaan!", "Ye lo trap!", "Maza aa raha hai!", "Anmol, jaldi kar!"];
+    document.getElementById('hindi-msg').innerText = phrases[Math.floor(Math.random()*phrases.length)];
+}, 5000);
+
+</script>
+</body>
+</html>
